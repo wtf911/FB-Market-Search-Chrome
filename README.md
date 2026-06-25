@@ -1,110 +1,119 @@
 # Marketplace Description Search (free)
 
-A Chrome extension that searches Facebook Marketplace by words in the listing
-**description** — the thing Facebook's own search can't do.
+A Chrome extension (Manifest V3) that searches **Facebook Marketplace by the words
+inside each listing's description** — the thing Facebook's own search can't do —
+and can watch a search on a schedule to notify you when a new matching listing appears.
 
 ## Why this exists
 Facebook's Marketplace search only matches listing **titles**. A rental titled
-"3 Beds 2 Baths - House" whose description says *"Located in quiet area in
+"3 Beds 2 Baths - House" whose description says *"Located in a quiet area in
 Choengmon"* never shows up when you search **choengmon**. This extension fixes
-that: it opens each listing in a background tab, reads the description that
-Facebook renders there, and keeps the ones containing your keyword.
+that: it opens each listing in a background tab, reads the description Facebook
+renders there, and keeps the ones that contain your keyword.
 
-## Install (load unpacked — takes 30 seconds)
-1. Open Chrome and go to `chrome://extensions`
+## Install (load unpacked — ~30 seconds)
+1. Open Chrome and go to `chrome://extensions`.
 2. Turn on **Developer mode** (top-right toggle).
 3. Click **Load unpacked** and select this `fb-marketplace-desc-search` folder.
-4. Done. (No icon is bundled, so it shows a default puzzle-piece — that's fine.)
+4. The extension's icon appears in your toolbar — pin it for one-click access to
+   the Alerts popup.
 
-## Use
-1. Go to Facebook Marketplace and run any normal **broad** search or open a
-   category (e.g. search `house`, or open Property for Rent for your area).
-   Broad is better — it loads the pool of listings to scan.
-2. A blue **"🔎 Description Search"** panel appears at the top-right.
-3. Type your keyword(s), e.g. `choengmon` (comma-separate for several).
-4. Set how many listings to scan, then click **Scan descriptions**.
-5. A background tab quietly cycles through the listings. Matches get a blue
-   outline on the page and are listed in the panel with links. "Hide
-   non-matches" (on by default) hides the rest.
+After editing the files, click the circular **refresh** arrow on the extension's
+card at `chrome://extensions` to reload it.
 
-### Your example
-Search `house` (with your location set to Koh Samui), keyword `choengmon` →
-the "3 Beds 2 Baths - House" listing that Facebook's search hid will surface.
+## Two ways to use it
 
-## Options
-- **match all** — require every keyword (default is match any).
-- **hide non-matches** — collapse non-matching cards after the scan.
-- **Max listings** — how many to open/scan (more = slower).
+### 1. Search descriptions on demand
+1. Go to Facebook Marketplace and run any **broad** search or open a category
+   (e.g. search `house`, or open *Property for Rent* for your area). Broad is
+   better — it loads a large pool of listings to scan.
+2. A blue **"🔎 Description Search"** panel appears at the top-right. (Click its
+   header or the **–** to collapse it.)
+3. Type your keyword(s) — comma-separate several, e.g. `choengmon, sea view`.
+4. Set **Max listings** (how many to open) and **Parallel tabs**, then click
+   **Scan descriptions**. A brief overlay shows the live "Loading listings…
+   N / max" count while it loads them.
+5. A small pool of background tabs quietly cycles through the listings. Matches
+   get a blue border in the feed and are listed in the panel with links and prices.
+6. With **show only matches** on (the default), a full-screen **gallery** of just
+   the matching listings opens when the scan finishes — each card shows the photo,
+   price, title, and the description snippet with your keyword highlighted. Press
+   **Esc** or **Show all listings** to close it.
+
+**Your example:** Search `house` (location set to Koh Samui), keyword `choengmon`
+→ the "3 Beds 2 Baths - House" listing that Facebook's title-only search hid will
+surface.
+
+### 2. Scheduled keyword alerts
+Get a desktop notification when a **new** listing mentions your keyword in its
+description.
+
+**Create an alert (two ways):**
+- On a Marketplace search/category page, fill in the panel's keyword(s) and click
+  **＋ Save as alert**, then type how often to check in minutes (5 min minimum); or
+- Click the toolbar icon to open the **🔔 Marketplace Description Alerts** popup.
+  It picks up the current Marketplace tab's URL — set your keyword(s), choose
+  **Check every** (15 min, 30 min, 1 hour, 3 hours, or 6 hours), adjust
+  **Max scan** / options, and click **Save alert**.
+
+**How alerts behave:**
+- On each run the alert opens its saved search **sorted newest-first**, scans
+  descriptions, and fires a desktop notification for any match it hasn't seen
+  before. Click a notification to open that listing.
+- When you first save an alert it silently records the current matches as
+  "already seen", so you're only pinged about listings that appear *after* setup.
+- Every match is kept in a per-alert **history** (newest first, up to 500).
+  Listings new since you last looked are tagged **NEW** until you click **Clear new**.
+- In the popup, each alert shows its last-run time and "*N saved, M new*" counts,
+  plus buttons: **Results** (expand the saved history inline, with **All / New**
+  filters and **Clear new / Clear all**), **View fullscreen** (open the matches as
+  a full-page gallery), **Run now**, and **Remove**.
+- Alerts run on Chrome's alarms, so checks only happen **while Chrome is open**.
+
+## Options (panel and popup)
+- **match all** — require *every* keyword to appear (default is match *any*).
+- **search titles too** — also match the listing title, not just the description.
+- **show only matches** *(panel only)* — open the gallery of matches after a scan
+  (on by default); turn it off to just highlight matches in the feed.
+- **Max listings / Max scan** — how many listings to open and read (more = slower).
+  The panel allows up to 1000; alerts up to 200.
+- **Parallel tabs** — how many listings to scan at once (1–5, default 3). Faster,
+  but higher values raise rate-limit/ban risk — keep it modest.
+- **↻ Sort newest first** *(panel)* — reload the current search sorted by
+  most-recently-listed before scanning (shows a ✓ once applied). Alerts always
+  sort newest automatically.
 
 ## How it works (and limits)
-- It reads the description from each listing's rendered page (the description
-  is loaded by JavaScript and isn't in the raw HTML, so a background tab is the
-  reliable way to read it). It auto-clicks "See more" so long descriptions are
-  fully searched.
-- Scanning is **sequential and throttled** (~1 listing/sec) on purpose.
-  Automated browsing is against Facebook's Terms of Service and hammering it can
-  get an account rate-limited. Keep scans modest and personal.
-- If Facebook changes its page layout, the section-detection may need a tweak
-  (see `SECTION_END` / the `Description` markers in `background.js`).
-- A single background tab is opened for the duration of a scan and closed when
-  it finishes; it does not steal focus.
+- **Descriptions aren't in the raw HTML** — Facebook renders them with JavaScript
+  per listing — so the only reliable way to read them is to open each listing in a
+  background tab and read the rendered page. It auto-clicks "See more" so long
+  descriptions are fully searched.
+- **Parallel but throttled.** Listings are scanned by a small pool of background
+  tabs (1–5) with a short pause between each. Automated browsing is against
+  Facebook's Terms of Service and hammering it can get an account rate-limited —
+  keep scans modest and personal, and parallelism low.
+- **Narrow with Facebook's own filters.** Set a location/radius and use the
+  **Date listed** filter to limit how far back you scan; that's the most reliable
+  way to skip old inventory.
+- **Layout-sensitive.** If Facebook changes its page structure, the description
+  detection may need a tweak (see `scrapePage` and its section markers in
+  `background.js`).
+- Background tabs are opened only for the duration of a scan and closed when it
+  finishes; they don't steal focus. (The service worker keeps a single blank tab
+  parked if closing the last one would otherwise quit Chrome and stop your alerts.)
 
 ## Files
-- `manifest.json` — extension config (MV3)
-- `background.js` — opens listings, scrapes + matches descriptions
-- `content.js` — the on-page panel and result display
-- `panel.css` — panel styling
+- `manifest.json` — extension config (Manifest V3)
+- `background.js` — the scanning engine (background-tab pool, description scrape +
+  matching), alert scheduler, and notifications
+- `content.js` — the on-page panel, in-feed highlighting, and the matches gallery
+  overlay
+- `popup.html` / `popup.js` — the toolbar **Alerts** manager (create / run / remove
+  alerts, browse saved history)
+- `gallery.html` / `gallery.js` — full-page view of one alert's saved matches
+- `panel.css` — styles shared by the panel, overlay, and galleries
+- `icon16.png` / `icon48.png` / `icon128.png` — toolbar and notification icons
 
 ---
 
-## Scheduled keyword alerts (v1.1)
-Get notified when a **new** listing mentions your keyword in its description.
-
-**Set one up (two ways):**
-- On a Marketplace search/category page, fill in the panel's keyword(s) and click
-  **＋ Save as alert**, then enter how often to check (minutes); or
-- Click the extension's toolbar icon to open the **Alerts** popup, which shows the
-  current page's feed, lets you set keywords + interval, and lists all alerts.
-
-**How it behaves:**
-- On each run it opens the saved feed (sorted newest-first), scans descriptions,
-  and fires a desktop notification for any match it hasn't seen before. Click a
-  notification to open that listing.
-- When you first save an alert it quietly records current matches as "already
-  seen", so you only get pinged about listings that appear *after* setup.
-- Manage/Run-now/Remove alerts from the toolbar popup.
-- Intervals use Chrome's alarms, so checks run only while Chrome is open.
-- Same fair-use note applies — keep intervals reasonable (15 min minimum offered).
-
-## Files (v1.1)
-- `manifest.json` — extension config (MV3)
-- `background.js` — scanning engine + alert scheduler + notifications
-- `content.js` — on-page panel (manual scan + Save as alert)
-- `popup.html` / `popup.js` — alert manager (toolbar icon)
-- `panel.css` — panel styling
-- `icon16.png` / `icon48.png` / `icon128.png` — toolbar/store icons
-
-## v1.2 — works with in-app navigation
-Facebook is a single-page app: clicking the Marketplace icon from your feed
-changes the page without a full reload, so earlier versions only showed the
-panel on a direct page load. v1.2 runs on all of facebook.com, watches for
-in-app URL changes, and shows the panel within ~1 second whenever you land on a
-Marketplace search/category page (and hides it elsewhere). After updating,
-reload the extension at `chrome://extensions` (the circular refresh arrow).
-
-## v1.3 — speed, reliability, and newest-first
-- **Faster:** listings are now scanned in parallel using a small pool of tabs.
-  Set **Parallel tabs** (1–5, default 3) in the panel; alerts use 3. There's no
-  way to read descriptions in bulk (Facebook only renders them per listing), so
-  parallelism + scanning fewer/newer listings is where the speed comes from.
-  Higher parallelism is faster but raises rate-limit/ban risk — keep it modest.
-- **Reliable loading:** the listing collector now scrolls patiently and
-  *accumulates* IDs as it goes, so it keeps counting even when Facebook recycles
-  off-screen cards out of the page (the old version could stall around ~75).
-  It shows a live "found N / max" count while loading.
-- **Newest first:** click **↻ Sort newest first** to reload the search sorted
-  by most-recently-listed before scanning (the button shows a checkmark once
-  applied). Scanning follows the page's order, so this makes a one-time scan
-  cover the newest listings first. **Alerts already sort newest automatically.**
-  For tighter control, also use Facebook's own **Date listed** filter to limit
-  how far back you scan — that's the most reliable way to skip old inventory.
+*Personal-use tool. Be a good citizen: keep scan sizes and alert frequencies reasonable.*
