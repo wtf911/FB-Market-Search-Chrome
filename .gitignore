@@ -1,0 +1,9 @@
+# Packaged extension builds
+*.zip
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.swp
+.vscode/
+.idea/

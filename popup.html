@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { width: 320px; margin: 0; font: 13px/1.45 -apple-system, Segoe UI, Roboto, sans-serif; color: #111; }
+  h1 { font-size: 14px; margin: 0; padding: 10px 12px; background: #1877f2; color: #fff; }
+  .sec { padding: 10px 12px; border-bottom: 1px solid #eee; }
+  label { display: block; font-weight: 600; margin: 6px 0 2px; }
+  small { font-weight: 400; color: #65676b; }
+  input[type=text], select, input[type=number] { width: 100%; box-sizing: border-box; padding: 6px;
+    border: 1px solid #ccd0d5; border-radius: 6px; }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 6px; }
+  .row > * { flex: 1; }
+  button { background: #1877f2; color: #fff; border: none; border-radius: 6px; padding: 8px;
+    font-weight: 600; cursor: pointer; }
+  button:hover { background: #166fe0; }
+  button.sm { padding: 4px 8px; font-weight: 500; font-size: 12px; flex: none; }
+  button.gray { background: #e4e6eb; color: #111; }
+  #current { color: #65676b; font-size: 12px; word-break: break-all; }
+  .alert { border-top: 1px solid #eee; padding: 8px 0; }
+  .alert b { color: #1877f2; }
+  .meta { color: #65676b; font-size: 12px; margin: 2px 0 4px; }
+  .meta a { color: #1877f2; text-decoration: none; word-break: break-all; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  #note { color: #b00; font-size: 12px; margin-top: 6px; }
+  /* results history */
+  .results { margin-top: 8px; }
+  .resbar { display: flex; gap: 6px; margin-bottom: 6px; }
+  .resbar button { padding: 3px 8px; font-size: 11px; font-weight: 600; background: #e4e6eb; color: #111; }
+  .resbar button.active { background: #1877f2; color: #fff; }
+  .resbar .spacer { flex: 1; }
+  .prog { color: #1877f2; font-weight: 600; }
+  .prog:empty { display: none; }
+  .reslist { max-height: 280px; overflow: auto; }
+  .reslist.newonly .res:not(.isnew) { display: none; }
+  .reslist .empty { color: #65676b; font-size: 12px; padding: 6px 0; }
+  .res { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid #f0f0f0;
+    text-decoration: none; color: #111; }
+  .res:hover { background: #f7f8fa; }
+  .res .thumb { width: 46px; height: 46px; flex: none; border-radius: 6px; overflow: hidden;
+    background: #e4e6eb; display: flex; align-items: center; justify-content: center; }
+  .res .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .res .info { display: flex; flex-direction: column; min-width: 0; }
+  .res .price { font-weight: 700; color: #1c7c32; font-size: 12px; }
+  .res .title { font-size: 12px; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .res .new { background: #1877f2; color: #fff; font-size: 10px; font-weight: 700; border-radius: 4px;
+    padding: 0 4px; margin-left: 4px; }
+</style>
+</head>
+<body>
+  <h1>🔔 Marketplace Description Alerts</h1>
+
+  <div class="sec">
+    <label>New alert from this tab</label>
+    <div id="current">Open a Marketplace search/category page to create an alert.</div>
+    <label>Keyword(s) in description <small>(comma-separated)</small></label>
+    <input id="kw" type="text" placeholder="e.g. one, two" />
+    <div class="row">
+      <div>
+        <label>Check every</label>
+        <select id="interval">
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="60" selected>1 hour</option>
+          <option value="180">3 hours</option>
+          <option value="360">6 hours</option>
+        </select>
+      </div>
+      <div>
+        <label>Max scan</label>
+        <input id="max" type="number" value="40" min="1" max="200" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label style="font-weight:400;flex:1"><input id="all" type="checkbox" /> match all keywords</label>
+      <label style="font-weight:400;flex:1"><input id="titles" type="checkbox" /> search titles too</label>
+    </div>
+    <div class="row">
+      <div><label>Parallel tabs</label><input id="conc" type="number" value="3" min="1" max="5" /></div>
+      <div></div>
+    </div>
+    <button id="save" style="width:100%;margin-top:10px">Save alert</button>
+    <div id="note"></div>
+  </div>
+
+  <div class="sec">
+    <label>Active alerts</label>
+    <div id="alerts"><small>None yet.</small></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
