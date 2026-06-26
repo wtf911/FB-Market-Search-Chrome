@@ -162,6 +162,7 @@ function collectIdsFunc(max) {
     (async () => {
       grab();                                  // count what's already loaded first
       let stable = 0;
+      let maxY = 0;                             // did the page ever actually scroll?
       const start = Date.now();
       while (found.size < max && stable < 12 && Date.now() - start < 180000) {
         const before = found.size;
@@ -169,9 +170,13 @@ function collectIdsFunc(max) {
         window.dispatchEvent(new Event("scroll"));
         await sleep(900);
         grab();
+        if (window.scrollY > maxY) maxY = window.scrollY;
         stable = found.size === before ? stable + 1 : 0;
       }
-      resolve({ ids: Array.from(found).slice(0, max), thumbs });
+      // scrolled=false means the tab never rendered/scrolled (Chrome throttles
+      // occluded/minimized-window tabs), so Facebook never lazy-loaded — the
+      // caller can retry with the tab foregrounded.
+      resolve({ ids: Array.from(found).slice(0, max), thumbs, scrolled: maxY > 0 });
     })();
   });
 }
@@ -223,26 +228,71 @@ async function scanIds(ids, keywords, matchAll, concurrency, searchTitles, onPro
   return matches;
 }
 
+// Inject the scroll-collector into a feed tab and return its result.
+async function collectFrom(tabId, max) {
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId }, func: collectIdsFunc, args: [max]
+    });
+    const o = (res && res.result) || {};
+    return { ids: o.ids || [], thumbs: o.thumbs || {}, scrolled: !!o.scrolled };
+  } catch (_) { return { ids: [], thumbs: {}, scrolled: false }; }
+}
+
+// Bring the collector tab to the foreground so Facebook actually paints and
+// lazy-loads (Chrome won't render tabs in an occluded/minimized window — the
+// reason scheduled runs under-collect vs a manual "Run now"). Returns a restore()
+// the caller invokes after the WHOLE run (collection + per-item scrape), so the
+// window stays rendered through scraping too — exactly mirroring a manual run —
+// instead of being re-occluded right before the descriptions are read.
+async function foregroundCollector(collector, prevFocusedId) {
+  let winState = null, prevActiveId = null;
+  const winId = collector.windowId;
+  try {
+    const win = await chrome.windows.get(winId);
+    winState = win.state;
+    const [prevActive] = await chrome.tabs.query({ active: true, windowId: winId });
+    prevActiveId = prevActive && prevActive.id;
+    if (winState === "minimized") await chrome.windows.update(winId, { state: "normal" });
+    await chrome.windows.update(winId, { focused: true });
+    await chrome.tabs.update(collector.id, { active: true });
+    await delay(1500);   // let Facebook paint & start lazy-loading
+  } catch (_) {}
+  return async function restore() {
+    try {
+      if (prevActiveId != null) await chrome.tabs.update(prevActiveId, { active: true });
+      if (winState === "minimized") await chrome.windows.update(winId, { state: "minimized" });
+      if (prevFocusedId != null) await chrome.windows.update(prevFocusedId, { focused: true });
+    } catch (_) {}
+  };
+}
+
 // Open a feed, collect IDs (newest first if caller passed a sorted URL), scan.
 async function runFeedScan(feedUrl, keywords, matchAll, max, concurrency, searchTitles, onProgress) {
+  const prevFocused = await chrome.windows.getLastFocused().catch(() => null);
   const collector = await chrome.tabs.create({ url: feedUrl, active: false });
   await waitForComplete(collector.id);
   await delay(2500);
-  let ids = [], thumbs = {};
+  let out = await collectFrom(collector.id, max);
+  let restore = null;
+  // Background tab never scrolled => it wasn't rendering (window occluded), so
+  // Facebook never loaded the rest. Foreground it and keep it rendered through
+  // the whole run (collection + per-item scrape), then restore at the end.
+  if (out.ids.length < max && !out.scrolled) {
+    restore = await foregroundCollector(collector, prevFocused && prevFocused.id);
+    out = await collectFrom(collector.id, max);
+  }
   try {
-    const [res] = await chrome.scripting.executeScript({
-      target: { tabId: collector.id }, func: collectIdsFunc, args: [max]
-    });
-    const out = (res && res.result) || {};
-    ids = out.ids || [];
-    thumbs = out.thumbs || {};
-  } catch (_) { ids = []; }
-  await safeCloseTab(collector.id);
-  const matches = await scanIds(ids, keywords, matchAll, concurrency, searchTitles, onProgress);
-  // Prefer the feed thumbnail (the listing's own card image) over the item-page
-  // scrape, which can accidentally pick up an ad or unrelated image.
-  for (const m of matches) { if (thumbs[m.id]) m.image = thumbs[m.id]; }
-  return matches;
+    const ids = out.ids, thumbs = out.thumbs;
+    await safeCloseTab(collector.id);
+    const matches = await scanIds(ids, keywords, matchAll, concurrency, searchTitles, onProgress);
+    // Prefer the feed thumbnail (the listing's own card image) over the item-page
+    // scrape, which can accidentally pick up an ad or unrelated image.
+    for (const m of matches) { if (thumbs[m.id]) m.image = thumbs[m.id]; }
+    return matches;
+  } finally {
+    if (restore) await restore();   // restore the user's window/tab after the whole scan
+  }
 }
 
 // ===================== ALERTS =====================

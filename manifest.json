@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Marketplace Description Search (free)",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "description": "Search Facebook Marketplace by words in the listing DESCRIPTION, with scheduled keyword alerts.",
   "permissions": ["scripting", "tabs", "storage", "alarms", "notifications"],
   "host_permissions": ["*://*.facebook.com/*"],
