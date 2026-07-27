@@ -25,6 +25,10 @@
 #mds-show, #mds-alert { width: 100%; margin-top: 6px; padding: 7px; background: #e4e6eb; color: #111;
   border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
 #mds-show:hover, #mds-alert:hover { background: #d8dadf; }
+#mds-cancel { width: 100%; margin-top: 6px; padding: 7px; background: #fde8e8; color: #c0392b;
+  border: 1px solid #f5c6c6; border-radius: 6px; font-weight: 600; cursor: pointer; }
+#mds-cancel:hover { background: #fbd5d5; }
+#mds-cancel[hidden] { display: none; }
 #mds-status { margin-top: 8px; color: #65676b; min-height: 16px; }
 .mds-result { border-top: 1px solid #eee; padding: 7px 0; }
 .mds-result a { color: #1877f2; font-weight: 600; text-decoration: none; }
@@ -41,6 +45,10 @@
   font: 14px/1.4 -apple-system, Segoe UI, Roboto, sans-serif; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
 #mds-overlay .mds-spin { width: 26px; height: 26px; margin: 0 auto 10px; border: 3px solid #cfe2ff;
   border-top-color: #1877f2; border-radius: 50%; animation: mds-spin 0.8s linear infinite; }
+#mds-overlay-cancel { margin-top: 12px; padding: 7px 18px; background: #fde8e8; color: #c0392b;
+  border: 1px solid #f5c6c6; border-radius: 6px; font-weight: 600; cursor: pointer;
+  font: 600 13px/1.3 -apple-system, Segoe UI, Roboto, sans-serif; }
+#mds-overlay-cancel:hover { background: #fbd5d5; }
 @keyframes mds-spin { to { transform: rotate(360deg); } }
 
 /* matches gallery overlay */

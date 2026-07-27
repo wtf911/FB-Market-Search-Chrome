@@ -103,7 +103,18 @@ function pollProgress() {
     document.querySelectorAll(".prog").forEach((el) => { el.textContent = ""; });
     if (rs && rs.id) {
       const el = document.getElementById("prog-" + rs.id);
-      if (el) el.textContent = rs.total ? `▶ ${rs.phase} ${rs.done}/${rs.total}` : `▶ ${rs.phase}`;
+      if (el) {
+        el.textContent = rs.total ? `▶ ${rs.phase} ${rs.done}/${rs.total} ` : `▶ ${rs.phase} `;
+        const stop = document.createElement("button");
+        stop.className = "sm stop";
+        stop.textContent = "Stop";
+        stop.title = "Cancel this run and close its background tabs";
+        stop.onclick = () => {
+          el.textContent = "Stopping…";
+          chrome.runtime.sendMessage({ type: "cancelRun" }, () => setTimeout(refresh, 400));
+        };
+        el.appendChild(stop);
+      }
     }
     const nowId = rs && rs.id ? rs.id : null;
     if (lastRunningId && !nowId) refresh();   // a run just finished — refresh counts/history

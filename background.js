@@ -11,6 +11,8 @@ let parkedTab = null;   // a single about:blank we keep so closing helpers never
 let busy = false;       // a scan (alert or in-page) is using the tab pool — owned by the queue
 let jobQueue = [];      // serialized work: {kind:'alert',id,manual,prime} | {kind:'scan',run}
 let runState = null;    // { id, phase, done, total } while an alert runs (for popup progress)
+let currentCancel = null;  // cancel token of the running job: { requested } (fresh per job)
+let collectorTab = null;   // feed tab of the active alert run, so cancel can close it mid-scroll
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // One global FIFO so alert runs and in-page scans never overlap (shared tab pool)
@@ -25,11 +27,25 @@ async function pumpQueue() {
   if (busy || !jobQueue.length) return;
   busy = true;
   const job = jobQueue.shift();
+  const cancel = { requested: false };   // fresh token — a cancel only ever stops THIS job
+  currentCancel = cancel;
   try {
-    if (job.kind === "alert") await runAlertById(job.id, job.manual, job.prime);
-    else if (job.kind === "scan") await job.run();
+    if (job.kind === "alert") await runAlertById(job.id, job.manual, job.prime, cancel);
+    else if (job.kind === "scan") await job.run(cancel);
   } catch (_) {}
-  finally { busy = false; pumpQueue(); }
+  finally { busy = false; currentCancel = null; pumpQueue(); }
+}
+
+// User hit Cancel/Stop: flag the running job, drop everything queued behind it,
+// and close the helper tabs right away — workers check the flag before recreating
+// a tab, so nothing reopens. Scheduled alerts just run again at their next alarm.
+async function cancelEverything() {
+  jobQueue = [];
+  if (currentCancel) currentCancel.requested = true;
+  const c = collectorTab;
+  collectorTab = null;
+  if (c != null) await safeCloseTab(c);   // breaks the in-tab scroll loop instantly
+  await closePool();
 }
 
 // Close a helper tab, but NEVER close the last remaining browser tab — doing so
@@ -87,14 +103,17 @@ async function ensureTab(tabId) {
 
 function waitForComplete(tabId, timeoutMs = 20000) {
   return new Promise((resolve) => {
-    const done = (id, info) => {
-      if (id === tabId && info.status === "complete") {
-        chrome.tabs.onUpdated.removeListener(done);
-        resolve(true);
-      }
+    const finish = (ok) => {
+      chrome.tabs.onUpdated.removeListener(done);
+      chrome.tabs.onRemoved.removeListener(gone);
+      clearTimeout(timer);
+      resolve(ok);
     };
+    const done = (id, info) => { if (id === tabId && info.status === "complete") finish(true); };
+    const gone = (id) => { if (id === tabId) finish(false); };   // tab closed (e.g. cancel) — don't wait out the timeout
     chrome.tabs.onUpdated.addListener(done);
-    setTimeout(() => { chrome.tabs.onUpdated.removeListener(done); resolve(false); }, timeoutMs);
+    chrome.tabs.onRemoved.addListener(gone);
+    const timer = setTimeout(() => finish(false), timeoutMs);
   });
 }
 
@@ -213,6 +232,7 @@ async function scanIds(ids, keywords, matchAll, concurrency, searchTitles, onPro
       tabId = await ensureTab(tabId);   // recreate the tab if the user closed it
       let r = await scanOneInTab(tabId, ids[i], keywords, matchAll, searchTitles);
       if (r.error) {
+        if (shouldAbort && shouldAbort()) return;   // cancel closed the tab — don't reopen it for a retry
         // The read failed (tab closed mid-scan, or the page didn't load). Retry
         // once on a guaranteed-fresh tab so a single hiccup doesn't drop a listing.
         tabId = await ensureTab(tabId);
@@ -268,29 +288,35 @@ async function foregroundCollector(collector, prevFocusedId) {
 }
 
 // Open a feed, collect IDs (newest first if caller passed a sorted URL), scan.
-async function runFeedScan(feedUrl, keywords, matchAll, max, concurrency, searchTitles, onProgress) {
+async function runFeedScan(feedUrl, keywords, matchAll, max, concurrency, searchTitles, onProgress, cancel) {
+  const cancelled = () => !!(cancel && cancel.requested);
   const prevFocused = await chrome.windows.getLastFocused().catch(() => null);
   const collector = await chrome.tabs.create({ url: feedUrl, active: false });
+  collectorTab = collector.id;   // published so cancelEverything() can close it mid-collection
   await waitForComplete(collector.id);
   await delay(2500);
-  let out = await collectFrom(collector.id, max);
+  let out = cancelled() ? { ids: [], thumbs: {}, scrolled: true } : await collectFrom(collector.id, max);
   let restore = null;
   // Background tab never scrolled => it wasn't rendering (window occluded), so
   // Facebook never loaded the rest. Foreground it and keep it rendered through
   // the whole run (collection + per-item scrape), then restore at the end.
-  if (out.ids.length < max && !out.scrolled) {
+  if (!cancelled() && out.ids.length < max && !out.scrolled) {
     restore = await foregroundCollector(collector, prevFocused && prevFocused.id);
     out = await collectFrom(collector.id, max);
   }
   try {
     const ids = out.ids, thumbs = out.thumbs;
     await safeCloseTab(collector.id);
-    const matches = await scanIds(ids, keywords, matchAll, concurrency, searchTitles, onProgress);
+    collectorTab = null;
+    if (cancelled()) return [];
+    const matches = await scanIds(ids, keywords, matchAll, concurrency, searchTitles, onProgress,
+                                  cancel ? () => cancel.requested : null);
     // Prefer the feed thumbnail (the listing's own card image) over the item-page
     // scrape, which can accidentally pick up an ad or unrelated image.
     for (const m of matches) { if (thumbs[m.id]) m.image = thumbs[m.id]; }
     return matches;
   } finally {
+    collectorTab = null;
     if (restore) await restore();   // restore the user's window/tab after the whole scan
   }
 }
@@ -324,7 +350,7 @@ chrome.notifications.onClicked.addListener((nid) => { if (notifUrl[nid]) chrome.
 // manual = user clicked "Run now" (show a "nothing new" toast if empty).
 // prime  = very first run when the alert is created — establish a baseline of
 //          current matches silently, with NO notifications.
-async function runAlertById(id, manual, prime) {
+async function runAlertById(id, manual, prime, cancel) {
   const alerts = await getAlerts();
   const alert = alerts.find((a) => a.id === id);
   if (!alert) return;
@@ -332,8 +358,12 @@ async function runAlertById(id, manual, prime) {
   try {
     const matches = await runFeedScan(
       withNewestSort(alert.url), alert.keywords, alert.matchAll, alert.max || 40, alert.concurrency || 3, !!alert.searchTitles,
-      (done, total) => { runState = { id, phase: "Scanning", done, total }; }
+      (done, total) => { runState = { id, phase: "Scanning", done, total }; },
+      cancel
     );
+    // Cancelled: discard the partial run — don't notify, and don't mark anything
+    // as seen (a listing skipped mid-run must still notify on the next full run).
+    if (cancel && cancel.requested) return;
     const seen = new Set(alert.seen || []);
     const freshThisRun = matches.filter((m) => !seen.has(m.id));   // genuinely new listings this run
     // Cumulative history: accumulate every match (deduped by id) across runs. The
@@ -391,7 +421,7 @@ chrome.runtime.onStartup.addListener(reRegisterAllAlarms);
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "scan") {
     const src = sender.tab && sender.tab.id;
-    enqueueJob({ kind: "scan", run: async () => {
+    enqueueJob({ kind: "scan", run: async (cancel) => {
       // If the user closes the tab that started the scan, there's no one to show
       // results to — stop early instead of burning through the rest of the list.
       let srcGone = false;
@@ -402,14 +432,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         matches = await scanIds(msg.ids, msg.keywords, !!msg.matchAll, msg.concurrency || 3, !!msg.searchTitles,
           (done, total, r) => send({ type: "progress", done, total, current: r }),
-          () => srcGone);
+          () => srcGone || cancel.requested);
       } finally {
         if (src != null) chrome.tabs.onRemoved.removeListener(onRemoved);
         await closePool();
       }
-      send({ type: "complete", matches });
+      send({ type: "complete", matches, cancelled: cancel.requested });
     } });
     sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.type === "cancelRun") {
+    cancelEverything().then(() => sendResponse({ ok: true }));
     return true;
   }
   if (msg.type === "listAlerts") { getAlerts().then((a) => sendResponse({ alerts: a, runState })); return true; }
