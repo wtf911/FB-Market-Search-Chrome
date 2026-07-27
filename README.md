@@ -39,6 +39,9 @@ card at `chrome://extensions` to reload it.
    the matching listings opens when the scan finishes — each card shows the photo,
    price, title, and the description snippet with your keyword highlighted. Press
    **Esc** or **Show all listings** to close it.
+7. Changed your mind? Click **✕ Cancel scan** in the panel (or **✕ Cancel** on the
+   loading overlay) — the scan stops and its background tabs are closed for you.
+   Don't close the helper tabs by hand; a running scan reopens them.
 
 **Your example:** Search `house` (location set to Koh Samui), keyword `choengmon`
 → the "3 Beds 2 Baths - House" listing that Facebook's title-only search hid will
@@ -68,6 +71,9 @@ description.
   plus buttons: **Results** (expand the saved history inline, with **All / New**
   filters and **Clear new / Clear all**), **View fullscreen** (open the matches as
   a full-page gallery), **Run now**, and **Remove**.
+- While a run is in progress the popup shows its live progress with a **Stop**
+  button — clicking it cancels the run, closes the helper tabs, and discards the
+  partial results (nothing is marked seen, so the next full run still notifies).
 - Alerts run on Chrome's alarms, so checks only happen **while Chrome is open**.
 
 ## Options (panel and popup)

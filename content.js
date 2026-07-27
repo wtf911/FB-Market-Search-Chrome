@@ -14,6 +14,9 @@
   let lastKw = [];
   let escHandler = null;
   let feedThumbs = {};   // id -> the listing's own card image, captured during collection
+  let scanning = false;       // a scan is in progress (collecting here, or scanning in background)
+  let scanCancelled = false;  // set by Cancel — breaks the collection loop below
+  let bgScanning = false;     // the service worker owns the scan now (tabs are its to close)
 
   function isFeedPage() {
     const p = location.pathname;
@@ -44,9 +47,11 @@
     if (!o) {
       o = document.createElement("div");
       o.id = "mds-overlay";
-      o.innerHTML = '<div id="mds-overlay-box"><div class="mds-spin"></div><div id="mds-overlay-txt"></div></div>';
+      o.innerHTML = '<div id="mds-overlay-box"><div class="mds-spin"></div><div id="mds-overlay-txt"></div>' +
+        '<button id="mds-overlay-cancel">✕ Cancel</button></div>';
       document.documentElement.appendChild(o);
     }
+    o.querySelector("#mds-overlay-cancel").onclick = cancelScan;
     o.querySelector("#mds-overlay-txt").textContent = t || "";
     o.style.display = "flex";
   }
@@ -88,7 +93,7 @@
     if (needScroll) showOverlay(`Loading listings… ${found.size} / ${max}`);
     let stable = 0;
     const start = Date.now();
-    while (found.size < max && stable < 12 && Date.now() - start < 180000) {
+    while (!scanCancelled && found.size < max && stable < 12 && Date.now() - start < 180000) {
       const before = found.size;
       window.scrollBy(0, Math.max(900, Math.floor(window.innerHeight * 0.9)));
       window.dispatchEvent(new Event("scroll"));
@@ -210,7 +215,23 @@
     };
   }
 
+  function setCancelVisible(v) { const b = q("#mds-cancel"); if (b) b.hidden = !v; }
+
+  // Cancel a running scan. During collection we just flag the local loop; once
+  // the background worker owns the scan, tell it to stop and close its tab pool
+  // (closing those tabs by hand doesn't work — the worker reopens them).
+  function cancelScan() {
+    scanCancelled = true;
+    if (bgScanning) chrome.runtime.sendMessage({ type: "cancelRun" });
+    scanning = false;
+    bgScanning = false;
+    setCancelVisible(false);
+    hideOverlay();
+    setStatus("Scan cancelled.");
+  }
+
   async function doScan() {
+    if (scanning) return;   // one scan at a time
     const o = readOpts();
     if (!o.kw.length) { setStatus("Enter at least one keyword."); return; }
     lastKw = o.kw;
@@ -218,10 +239,14 @@
     q("#mds-results").innerHTML = "";
     matchedIds = new Set();
     clearMarks();
+    scanning = true; scanCancelled = false; bgScanning = false;
+    setCancelVisible(true);
     setStatus("Loading listings…");
     const ids = await collectIds(o.max);
-    if (!ids.length) { setStatus("No listings found on this page."); return; }
+    if (scanCancelled) return;   // cancelled during collection — cancelScan() already reset the UI
+    if (!ids.length) { scanning = false; setCancelVisible(false); setStatus("No listings found on this page."); return; }
     setStatus(`Scanning ${ids.length} descriptions with ${o.concurrency} tabs…`);
+    bgScanning = true;
     chrome.runtime.sendMessage({ type: "scan", ids, keywords: o.kw, matchAll: o.matchAll, searchTitles: o.searchTitles, concurrency: o.concurrency });
   }
 
@@ -272,6 +297,7 @@
         </div>
         <button id="mds-sort" title="Reload this search sorted newest-first">↻ Sort newest first</button>
         <button id="mds-go">Scan descriptions</button>
+        <button id="mds-cancel" hidden title="Stop the scan and close its background tabs">✕ Cancel scan</button>
         <button id="mds-show" title="Close the matches gallery">Show all listings</button>
         <button id="mds-alert" title="Re-scan this page on a schedule and notify you of new matches">＋ Save as alert</button>
         <div id="mds-status"></div>
@@ -282,6 +308,7 @@
     panel.querySelector("#mds-head").onclick = (e) => { if (e.target.id === "mds-head") panel.classList.toggle("mds-collapsed"); };
     panel.querySelector("#mds-sort").onclick = doSortNewest;
     panel.querySelector("#mds-go").onclick = doScan;
+    panel.querySelector("#mds-cancel").onclick = cancelScan;
     panel.querySelector("#mds-show").onclick = () => { stopFilter(); setStatus("Showing all listings."); };
     panel.querySelector("#mds-alert").onclick = doSaveAlert;
     updateSortBtn();
@@ -292,11 +319,18 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "progress") {
+      if (!scanCancelled) { scanning = true; bgScanning = true; setCancelVisible(true); }  // re-sync if the panel was rebuilt mid-scan
       const c = msg.current;
       setStatus(`Checked ${msg.done}/${msg.total}… (${matchedIds.size} match${matchedIds.size === 1 ? "" : "es"})`);
       if (c && c.matched) { matchedIds.add(c.id); addResult(c); outlineMatch(c.id); }
     } else if (msg.type === "complete") {
+      scanning = false; bgScanning = false;
+      setCancelVisible(false);
       const n = msg.matches.length;
+      if (msg.cancelled) {
+        setStatus(`Scan cancelled — ${n} match${n === 1 ? "" : "es"} before stopping.`);
+        return;
+      }
       const hide = q("#mds-hide");
       if (hide && hide.checked && n > 0) {
         filtering = true;
