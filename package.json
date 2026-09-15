@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test": "node --test",
     "smoke": "node tests/smoke.mjs",
     "e2e": "node tests/e2e.mjs",
     "zip": "bash scripts/build-zip.sh",
