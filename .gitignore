@@ -1,6 +1,11 @@
 # Packaged extension builds
 *.zip
 
+# Dev tooling
+node_modules/
+package-lock.json
+test-results/
+
 # OS / editor cruft
 Thumbs.db
 .DS_Store
