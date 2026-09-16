@@ -16,7 +16,7 @@
 // (see trackTabs, armAlarm, migrate).
 importScripts("shared.js");
 const { LIMITS, STATUS, itemUrl, matchText, snippetAround, withNewestSort, isFeedUrl,
-        priceInRange, extractPrice, descPriceNum, alertKey, clampInt } = MDS;
+        priceInRange, extractPrice, descPriceNum, cleanTitle, alertKey, clampInt } = MDS;
 
 const pool = [];          // helper tab ids — mutated in place ONLY (push/splice), never reassigned:
                           // a cancel-initiated closePool and the next job's getPool can overlap
@@ -291,26 +291,34 @@ function scrapePage(id) {
       });
       return did;
     }
+    // Light title clean-up, only to locate the listing block in the page text; the
+    // worker applies the authoritative MDS.cleanTitle for display.
+    const roughTitle = () => (document.title || "").replace(/^\(\d+\)\s*/, "").replace(/\s*\|\s*Facebook\s*$/i, "").replace(/^Marketplace\s*[–\-]\s*/i, "").trim();
     function read() {
       const body = (document.body ? document.body.innerText : "") || "";
       const m = body.search(DESC_RE);
       const headingFound = m > -1;
-      let desc = "", header = body.slice(0, 600);
+      // The price sits right under the title. Take the text from the title to the
+      // Description heading, so the navigation rail above it (which contains the
+      // "Free Stuff" category) can never be mistaken for a price.
+      const t = roughTitle();
+      let start = t ? body.indexOf(t) : -1;
+      if (start < 0 && t.length > 25) start = body.indexOf(t.slice(0, 25));
+      let desc = "", header;
       if (headingFound) {
-        header = body.slice(0, m);
+        header = start > -1 && start < m ? body.slice(start, m) : body.slice(Math.max(0, m - 800), m);
         const rest = body.slice(m).replace(/^\n[^\n]*\n/, "");
         // Search with a leading newline so an END marker directly after the heading
         // (blank description) is found instead of being read as the description.
         const end = ("\n" + rest).search(END_RE);
         desc = (end > -1 ? rest.slice(0, Math.max(0, end - 1)) : rest.slice(0, 4000)).trim();
-      }
+      } else header = start > -1 ? body.slice(start, start + 800) : body.slice(0, 800);
       return { body, desc, header, headingFound };
     }
     function finish(r, source, state) {
-      const title = (document.title || "").replace(/\s*\|\s*Facebook\s*$/i, "").replace(/^Marketplace\s*[–\-]\s*/i, "").trim()
-        || meta("og:title") || "(untitled listing)";
       const og = meta("og:image");
-      resolve({ state: state || pageState(r.body), descFound: !!r.desc, description: r.desc, source, title, header: r.header,
+      resolve({ state: state || pageState(r.body), descFound: !!r.desc, description: r.desc, source,
+        title: document.title || "", ogTitle: meta("og:title"), header: r.header,
         image: /^https?:/.test(og) ? og : "", href: location.href, ms: Date.now() - started });
     }
     function attempt() {
@@ -353,7 +361,8 @@ function judgeListing(id, d, o) {
 }
 function cacheEntry(d) {
   const p = extractPrice(d.header || "");
-  return { ts: Date.now(), state: d.state, description: d.description, descFound: d.descFound, source: d.source, title: d.title,
+  const title = cleanTitle(d.title) || cleanTitle(d.ogTitle) || "(untitled listing)";
+  return { ts: Date.now(), state: d.state, description: d.description, descFound: d.descFound, source: d.source, title,
     price: p.price, priceNum: p.priceNum, descPriceNum: descPriceNum(d.description), image: d.image };
 }
 async function scanOneInTab(tabId, id, o) {
@@ -673,12 +682,17 @@ async function runAlertById(job) {
     const a = alerts.find((x) => x.id === id);
     if (!a) return null;                                  // removed mid-run: drop the results
     const hist = await getHist(id);
-    const seen = new Set(a.seen || []), known = new Set(hist.map((m) => m.id));
+    const seen = new Set(a.seen || []), known = new Map(hist.map((m) => [m.id, m]));
     const fresh = matches.filter((m) => !seen.has(m.id) && !known.has(m.id));
     for (const m of matches) {
-      if (known.has(m.id)) continue;
-      hist.unshift(historyEntry(m, !silent && !seen.has(m.id)));   // NEW is sticky until "Clear new"
-      known.add(m.id);
+      const ex = known.get(m.id);
+      if (ex) {   // already saved: refresh what the seller may have changed (price, title, photo)
+        Object.assign(ex, { title: m.title, price: m.price, priceNum: m.priceNum, snippet: m.snippet, hits: m.hits || [], image: m.image || ex.image });
+        continue;
+      }
+      const e = historyEntry(m, !silent && !seen.has(m.id));      // NEW is sticky until "Clear new"
+      hist.unshift(e);
+      known.set(m.id, e);
     }
     if (hist.length > LIMITS.historyMax) hist.length = LIMITS.historyMax;
     a.seen = Array.from(new Set([...matches.map((m) => m.id), ...(a.seen || [])])).slice(0, LIMITS.seenMax);
@@ -702,7 +716,13 @@ async function runAlertById(job) {
 // ===================== STARTUP =====================
 async function migrate() {
   const { schemaVersion = 1 } = await store.get("schemaVersion");
-  if (schemaVersion >= 2) return;
+  if (schemaVersion >= 3) return;
+  if (schemaVersion === 2) {
+    // 2.0.0 could cache "Free" (from the sidebar's "Free Stuff") as a listing's price.
+    await store.remove("descCache");
+    await store.set({ schemaVersion: 3 });
+    return;
+  }
   await withStore(async () => {
     const all = (await store.get("alerts")).alerts || [];
     for (const a of all) {
@@ -720,7 +740,7 @@ async function migrate() {
       if (a.lastStatus == null) a.lastStatus = a.lastRun ? "ok" : null;
       delete a.lastCount;
     }
-    await store.set({ alerts: all, schemaVersion: 2 });
+    await store.set({ alerts: all, schemaVersion: 3 });
   });
   const { kw, panelOpts } = await store.get(["kw", "panelOpts"]);
   if (kw && !(panelOpts && panelOpts.kw)) await store.set({ panelOpts: { ...(panelOpts || {}), kw } });

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+- Priced listings could show "Free": the price was searched in all page text above
+  the description, which starts with Facebook's Marketplace navigation and its
+  "Free Stuff" category. The price is now read from the listing block (title
+  downwards), "Free" only counts on a line of its own, and prefixed currency codes
+  such as `THB 20,000` are recognised. The description cache is cleared once on
+  update and saved matches get their price and title refreshed on the next run.
+- Titles no longer carry the tab's notification count (`(1) Marketplace – …`).
+- Popup text wraps at word boundaries (only long URLs break mid-string).
+
 ## 2.0.0
 
 A ground-up hardening release. Existing alerts and their history are migrated

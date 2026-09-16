@@ -28,11 +28,14 @@ const page = (body, title) => `<!doctype html><html><head><meta charset="utf-8">
   <meta property="og:image" content="https://scontent.example/photo.jpg"></head><body>${body}</body></html>`;
 const feedHtml = () => page(`<div style="height:2400px">${Object.keys(LISTINGS).map((id) =>
   `<div><a href="/marketplace/item/${id}/"><img src="https://scontent.example/t${id}.jpg" width="200" height="150"><span>${(LISTINGS[id].title || "x")}</span></a></div>`).join("")}</div>`, "Marketplace");
+// Real item pages carry Facebook's Marketplace navigation rail (including a "Free Stuff"
+// category) above the listing, and the tab title carries a notification count.
+const RAIL = "<div>Marketplace</div><div>Browse all</div><div>Free Stuff</div><div>Property Rentals</div><div>Vehicles</div>";
 const itemHtml = (id) => {
   const l = LISTINGS[id];
   if (!l) return page("<div>Not found</div>");
   if (l.unavailable) return page("<div>This content isn't available right now</div>", "Facebook");
-  return page(`<div>${l.title}</div><div>${l.price}</div><div>Description</div><div>${l.desc || ""}</div><div>Seller information</div><div>Seller Name</div>`, `Marketplace - ${l.title}`);
+  return page(`${RAIL}<div>${l.title}</div><div>${l.price}</div><div>Description</div><div>${l.desc || ""}</div><div>Seller information</div><div>Seller Name</div>`, `(2) Marketplace - ${l.title}`);
 };
 
 // Throwaway certificate + HTTPS server standing in for facebook.com and its CDN.
@@ -87,13 +90,16 @@ try {
     const res = await runFeedScan({ feedUrl: FEED, max: 10, concurrency: 2, match, noCache: false }, { manual: true, cancel: { requested: false }, cache, dismissed: {}, onProgress: () => {} });
     await closePool();
     await saveCache(cache);
-    return { res: { ...res, matches: res.matches.map((m) => ({ id: m.id, title: m.title, price: m.price, priceNum: m.priceNum, snippet: m.snippet, hits: m.hits, excludedBy: m.excludedBy })) }, cacheIds: Object.keys(cache).sort(), cache101: cache["101"], cache105: cache["105"] };
+    return { res: { ...res, matches: res.matches.map((m) => ({ id: m.id, title: m.title, price: m.price, priceNum: m.priceNum, snippet: m.snippet, hits: m.hits, excludedBy: m.excludedBy })) },
+      cacheIds: Object.keys(cache).sort(), cache101: cache["101"], cache104: cache["104"], cache105: cache["105"] };
   }, { FEED, match });
   check(r1.res.state === "ok", "run state ok (" + r1.res.state + " " + (r1.res.error || "") + ")");
   check(r1.res.ids.length === 5, "collector found 5 listings (" + r1.res.ids.length + ")");
   check(r1.res.matches.length === 1 && r1.res.matches[0].id === "101", "exactly listing 101 matched (102 excluded by 'agent'): " + JSON.stringify(r1.res.matches.map((m) => m.id)));
   const m = r1.res.matches[0] || {};
-  check(m.price === "฿15,000 / month" && m.priceNum === 15000, "price scoped to the header and parsed: " + m.price + " / " + m.priceNum);
+  check(m.price === "฿15,000 / month" && m.priceNum === 15000, "price read below the title despite the 'Free Stuff' rail: " + m.price + " / " + m.priceNum);
+  check(m.title === "3 Beds 2 Baths - House", "title cleaned of '(2) Marketplace -' and '| Facebook': " + m.title);
+  check(r1.cache104 && r1.cache104.price === "Free" && r1.cache104.priceNum === 0, "a genuinely free listing keeps 'Free': " + JSON.stringify(r1.cache104 && [r1.cache104.price, r1.cache104.priceNum]));
   check(/Choengmon/.test(m.snippet || ""), "snippet contains the hit: " + m.snippet);
   check(r1.res.noDesc === 1, "blank description counted, not matched (" + r1.res.noDesc + ")");
   check(r1.res.unavailable === 1, "unavailable listing detected (" + r1.res.unavailable + ")");

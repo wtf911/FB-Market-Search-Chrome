@@ -81,7 +81,8 @@ test("prices: many currencies, thousands vs decimals, free, per-period", () => {
   assert.equal(M.extractPrice("1 200 zł").priceNum, 1200);
   assert.equal(M.extractPrice("€1.200,50").priceNum, 1200.5);
   assert.equal(M.extractPrice("CA$ 30").priceNum, 30);
-  assert.equal(M.extractPrice("Free sofa").priceNum, 0);
+  assert.equal(M.extractPrice("Free\nsofa").priceNum, 0);
+  assert.equal(M.extractPrice("Free sofa").price, "");      // "Free" inside a sentence is not a price
   assert.equal(M.extractPrice("25 000 THB").priceNum, 25000);
   assert.equal(M.extractPrice("no price here").price, "");
   assert.equal(M.parsePriceNum("12.5"), 12.5);
@@ -91,6 +92,22 @@ test("prices: many currencies, thousands vs decimals, free, per-period", () => {
   assert.equal(M.priceInRange(25000, 20000, 30000), true);
   assert.equal(M.priceInRange(null, 20000, null), false);
   assert.equal(M.priceInRange(null, null, null), true);
+});
+
+test("prices: the sidebar's 'Free Stuff' is not a price, a lone 'Free' line is", () => {
+  const page = "Marketplace\nFree Stuff\nProperty Rentals\n3 Beds 2 Baths - House\n฿15,000 / month\nListed 2 days ago";
+  assert.deepEqual(M.extractPrice(page), { price: "฿15,000 / month", priceNum: 15000 });
+  assert.deepEqual(M.extractPrice("Free Stuff\nRoom for rent\nFree\nListed today"), { price: "Free", priceNum: 0 });
+  assert.equal(M.extractPrice("Free Stuff\nRoom for rent").price, "");
+  assert.equal(M.extractPrice("Villa\nTHB 20,000 / month").priceNum, 20000);
+  assert.equal(M.extractPrice("Pet-free home, no price").price, "");
+});
+
+test("cleanTitle strips notification counts, the Marketplace prefix and the Facebook suffix", () => {
+  assert.equal(M.cleanTitle("(2) Marketplace – 3 Beds 2 Baths - House | Facebook"), "3 Beds 2 Baths - House");
+  assert.equal(M.cleanTitle("Marketplace - Villa with pool | Facebook"), "Villa with pool");
+  assert.equal(M.cleanTitle("Plain title"), "Plain title");
+  assert.equal(M.cleanTitle(""), "");
 });
 
 test("alertKey ignores order/case of terms but not options", () => {

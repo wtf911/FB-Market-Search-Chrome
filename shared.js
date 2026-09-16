@@ -141,18 +141,28 @@
     return best;
   }
 
-  // Prices: symbol-prefixed (฿1,200 / CA$ 30), code-suffixed (1 200 zł / 25 000 THB) or a
-  // "free" word, with an optional per-period suffix kept for display.
-  const PRICE_RE = new RegExp(
+  // Prices: symbol-prefixed (฿1,200 / CA$ 30), code-prefixed (THB 20,000), code-suffixed
+  // (1 200 zł / 25 000 THB), with an optional per-period suffix kept for display.
+  const CURRENCY_RE = new RegExp(
     "(?:(?:[A-Z]{1,3}\\$|R\\$|[฿$€£¥₹₩₱₫₺₴₪])\\s?\\d[\\d.,]*(?:\\s\\d{3}(?!\\d))*" +
-    "|\\d[\\d.,]*(?:\\s\\d{3}(?!\\d))*\\s?(?:€|kr|zł|Kč|Ft|lei|лв|₽|CHF|RM|USD|EUR|GBP|THB|บาท|baht)(?!\\p{L})" +
-    "|(?<!\\p{L})(?:Free|Gratis|Kostenlos|ฟรี)(?!\\p{L}))" +
+    "|(?<![\\p{L}\\d])(?:THB|USD|EUR|GBP|CHF|AUD|CAD|NZD|SGD|MYR|IDR|PHP|VND|INR|JPY|KRW|RM|Rp|Rs)\\s?\\d[\\d.,]*(?:\\s\\d{3}(?!\\d))*" +
+    "|\\d[\\d.,]*(?:\\s\\d{3}(?!\\d))*\\s?(?:€|kr|zł|Kč|Ft|lei|лв|₽|CHF|RM|USD|EUR|GBP|THB|บาท|baht)(?!\\p{L}))" +
     "(?:\\s?(?:/\\s?(?:month|mo|week|wk|day|night|hour|hr)\\b|per\\s+(?:month|week|day|night)\\b))?", "iu");
+  // A "free" listing shows the word on a line of its own — never match it inside other
+  // text (Facebook's sidebar has a "Free Stuff" category on every listing page).
+  const FREE_RE = /(?:^|\n)[ \t]*(Free|Gratis|Kostenlos|ฟรี)[ \t]*(?=\n|$)/i;
   function extractPrice(text) {
-    const m = String(text || "").match(PRICE_RE);
-    if (!m) return { price: "", priceNum: null };
-    const price = m[0].replace(/\s+/g, " ").trim();
-    return { price, priceNum: parsePriceNum(price) };
+    const s = String(text || "");
+    let m = s.match(CURRENCY_RE);
+    if (m) { const price = m[0].replace(/\s+/g, " ").trim(); return { price, priceNum: parsePriceNum(price) }; }
+    m = s.match(FREE_RE);
+    if (m) return { price: m[1], priceNum: 0 };
+    return { price: "", priceNum: null };
+  }
+  // "(2) Marketplace – 3 Beds 2 Baths - House | Facebook" -> "3 Beds 2 Baths - House"
+  function cleanTitle(s) {
+    return String(s || "").replace(/^\(\d+\)\s*/, "").replace(/\s*\|\s*Facebook\s*$/i, "")
+      .replace(/^(?:Facebook\s*[–\-]\s*)?Marketplace\s*[–\-]\s*/i, "").trim();
   }
   // "€1.200,50" -> 1200.5, "1,200" -> 1200, "1.200" -> 1200, "12.5" -> 12.5, "Free" -> 0
   function parsePriceNum(s) {
@@ -238,7 +248,7 @@
     parseKeywords, formatKeywords, matchText, termTest,
     snippetAround, highlightSnippet,
     withNewestSort, isFeedUrl, bestImageIn,
-    extractPrice, parsePriceNum, priceInRange, descPriceNum,
+    extractPrice, parsePriceNum, priceInRange, descPriceNum, cleanTitle,
     alertKey, clampInt, timeAgo, timeUntil, fmtDuration,
   };
 })(globalThis);
