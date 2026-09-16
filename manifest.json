@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Marketplace Description Search (free)",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Search Facebook Marketplace by words in the listing DESCRIPTION, with scheduled keyword alerts.",
   "minimum_chrome_version": "116",
   "homepage_url": "https://github.com/wtf911/FB-Market-Search-Chrome",
